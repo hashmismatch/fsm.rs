@@ -1,6 +1,6 @@
 extern crate finny;
 
-use finny::{FsmCurrentState, FsmError, FsmEventQueueVec, FsmFactory, FsmResult, decl::{BuiltFsm, FsmBuilder}, finny_fsm, inspect_slog::InspectSlog};
+use finny::{FsmCurrentState, FsmError, FsmEventQueueVec, FsmFactory, FsmResult, FsmTimersNull, decl::{BuiltFsm, FsmBuilder}, finny_fsm, inspect::slog::InspectSlog};
 use slog::{Drain, o};
 
 #[derive(Default)]
@@ -132,7 +132,7 @@ fn test_sub() -> FsmResult<()> {
 
     let logger = slog::Logger::root(drain, o!());
     
-    let mut fsm = StateMachine::new_with(MainContext::default(), FsmEventQueueVec::new(), InspectSlog::new(Some(logger)))?;
+    let mut fsm = StateMachine::new_with(MainContext::default(), FsmEventQueueVec::new(), InspectSlog::new(Some(logger)), FsmTimersNull)?;
     
     fsm.start()?;
     assert_eq!(FsmCurrentState::State(StateMachineCurrentState::StateA), fsm.get_current_states()[0]);

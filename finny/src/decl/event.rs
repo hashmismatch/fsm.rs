@@ -49,6 +49,11 @@ impl<'a, TFsm, TContext, TEvent, TState> FsmEventBuilderTransition<'a, TFsm, TCo
     pub fn guard<TGuard: Fn(&TEvent, &EventContext<'a, TFsm, FsmQueueMock<TFsm>>, &<TFsm as FsmBackend>::States) -> bool>(&mut self, _guard: TGuard) -> &mut Self {
         self
     }
+
+    /// A type for this transition. The struct for the transition will be generated.
+    pub fn with_transition_ty<TTransition>(&mut self) -> &mut Self {
+        self
+    }
 }
 
 
@@ -69,4 +74,9 @@ impl<'a, TFsm, TContext, TEvent, TStateFrom, TStateTo> FsmEventBuilderTransition
     pub fn guard<TGuard: Fn(&TEvent, &EventContext<'a, TFsm, FsmQueueMock<TFsm>>, &<TFsm as FsmBackend>::States) -> bool>(&mut self, _guard: TGuard) -> &mut Self {
         self
     }
+
+    /// A type for this transition. The struct for the transition will be generated.
+    pub fn with_transition_ty<TTransition>(&mut self) -> &mut Self {
+        self
+    }    
 }

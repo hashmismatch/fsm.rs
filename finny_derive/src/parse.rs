@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use proc_macro2::{Span, TokenStream};
 use syn::{Error, Expr, ExprMethodCall, GenericArgument, ItemFn, parse::{self, Parse, ParseStream}, spanned::Spanned};
 
-use crate::{parse_blocks::{FsmBlock, decode_blocks, get_generics, get_method_receiver_ident}, parse_fsm::{FsmCodegenOptions, FsmParser}, utils::{assert_no_generics, get_closure, to_field_name}};
+use crate::{parse_blocks::{FsmBlock, decode_blocks, get_generics, get_method_receiver_ident}, parse_fsm::{FsmCodegenOptions, FsmParser}, utils::{assert_no_generics, get_closure, to_field_name, ty_append}};
 
 
 pub struct FsmFnInput {
@@ -15,6 +15,7 @@ pub struct FsmFnInput {
 pub struct FsmFnBase {
     pub context_ty: syn::Type,
     pub fsm_ty: syn::Type,
+    pub fsm_info_ty: syn::Type,
     pub builder_ident: proc_macro2::Ident,
     pub fsm_generics: syn::Generics
 }
@@ -109,7 +110,8 @@ impl FsmFnInput {
         let base = FsmFnBase {
             builder_ident,
             context_ty,
-            fsm_ty,
+            fsm_info_ty: crate::utils::ty_append(&fsm_ty, "Info"),
+            fsm_ty,            
             fsm_generics: input_fn.sig.generics.clone()
         };
 
@@ -144,7 +146,8 @@ pub struct ValidatedFsm {
 pub struct FsmRegion {
     pub region_id: usize,
     pub initial_state: syn::Type,
-    pub transitions: Vec<FsmTransition>
+    pub transitions: Vec<FsmTransition>,
+    pub states: Vec<FsmState>
 }
 
 #[derive(Debug, Clone)]
@@ -240,8 +243,32 @@ pub struct FsmState {
     pub kind: FsmStateKind,
     pub state_storage_field: syn::Ident,
     pub on_entry_closure: Option<syn::ExprClosure>,
-    pub on_exit_closure: Option<syn::ExprClosure>
+    pub on_exit_closure: Option<syn::ExprClosure>,
+    pub timers: Vec<FsmTimer>
 }
+
+#[derive(Debug, Clone)]
+pub struct FsmTimer {
+    pub id: usize,
+    pub setup: syn::ExprClosure,
+    pub trigger: syn::ExprClosure,
+    pub type_hint: Option<syn::Type>
+}
+
+impl FsmTimer {
+    pub fn get_ty(&self, fsm: &FsmFnBase) -> syn::Type {
+        if let Some(ref type_hint) = self.type_hint {
+            type_hint.clone()
+        } else {
+            ty_append(&fsm.fsm_ty, &format!("Timer{}", self.id))
+        }
+    }
+
+    pub fn get_field(&self, fsm: &FsmFnBase) -> syn::Ident {
+        to_field_name(&self.get_ty(fsm))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FsmEvent {
     pub ty: syn::Type,
@@ -261,7 +288,8 @@ pub enum FsmEventTransition {
 #[derive(Default, Debug, Clone)]
 pub struct EventGuardAction{
     pub guard: Option<syn::ExprClosure>,
-    pub action: Option<syn::ExprClosure>
+    pub action: Option<syn::ExprClosure>,
+    pub type_hint: Option<syn::Type>
 }
 
 impl FsmDeclarations {

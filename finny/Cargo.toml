@@ -16,7 +16,10 @@ finny_derive = { path = "../finny_derive", version = "0.2.0" }
 arraydeque = { version = "0.4", default-features = false }
 slog = { version = "2.7.0", optional = true }
 
+
 [features]
-default = ["std", "inspect_slog"]
+default = ["std", "inspect_slog", "timers_std"]
 std = ["arraydeque/std"]
 inspect_slog = ["slog"]
+timers_std = []
+generate_plantuml = ["finny_derive/generate_plantuml"]

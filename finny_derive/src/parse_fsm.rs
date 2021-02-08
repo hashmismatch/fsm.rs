@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use proc_macro2::Span;
 use syn::{ExprMethodCall, ItemFn, Type, spanned::Spanned};
 
-use crate::{parse::{EventGuardAction, FsmDeclarations, FsmEvent, FsmEventTransition, FsmFnBase, FsmState, FsmStateAction, FsmStateKind, FsmStateTransition, FsmSubMachineOptions, FsmTransition, FsmTransitionEvent, FsmTransitionState, FsmTransitionType, ValidatedFsm}, parse_blocks::{FsmBlock, get_generics}, utils::{assert_no_generics, to_field_name, get_closure}, validation::create_regions};
+use crate::{parse::{EventGuardAction, FsmDeclarations, FsmEvent, FsmEventTransition, FsmFnBase, FsmState, FsmStateAction, FsmStateKind, FsmStateTransition, FsmSubMachineOptions, FsmTimer, FsmTransition, FsmTransitionEvent, FsmTransitionState, FsmTransitionType, ValidatedFsm}, parse_blocks::{FsmBlock, get_generics}, utils::{assert_no_generics, to_field_name, get_closure}, validation::create_regions};
 
 #[derive(Copy, Clone, Debug)]
 pub struct FsmCodegenOptions {
@@ -23,7 +23,8 @@ pub struct FsmParser {
     states: HashMap<Type, FsmState>,
     events: HashMap<Type, FsmEvent>,
     options: FsmCodegenOptions,
-    base: FsmFnBase
+    base: FsmFnBase,
+    timer_id: usize
 }
 
 impl FsmParser {
@@ -33,7 +34,8 @@ impl FsmParser {
             states: HashMap::new(),
             events: HashMap::new(),
             options: FsmCodegenOptions::new(),
-            base
+            base,
+            timer_id: 1
         }
     }
 
@@ -79,7 +81,7 @@ impl FsmParser {
                         [MethodOverviewRef { name: "sub_machine", generics: [ty_sub_fsm], ..}, st @ .. ] => {
 
                             //assert_no_generics(ty_sub_fsm)?;
-                            let field_name = to_field_name(&ty_sub_fsm)?;
+                            let field_name = to_field_name(&ty_sub_fsm);
                             
                             let state = self.states
                                 .entry(ty_sub_fsm.clone())
@@ -88,7 +90,8 @@ impl FsmParser {
                                     state_storage_field: field_name,
                                     on_entry_closure: None,
                                     on_exit_closure: None,
-                                    kind: FsmStateKind::SubMachine(FsmSubMachineOptions::default())
+                                    kind: FsmStateKind::SubMachine(FsmSubMachineOptions::default()),
+                                    timers: vec![]
                                 });
                             let mut sub_options = match state.kind {                                
                                 FsmStateKind::SubMachine(ref sub) => sub.clone(),
@@ -136,7 +139,7 @@ impl FsmParser {
     }
 
     fn parse_event_guard_action(event_method_calls: &[MethodOverviewRef]) -> syn::Result<EventGuardAction> {
-        let mut guard_action = EventGuardAction { guard: None, action: None};
+        let mut guard_action = EventGuardAction { guard: None, action: None, type_hint: None };
         
         for method in event_method_calls {
             match method {
@@ -157,7 +160,16 @@ impl FsmParser {
                     }
 
                     guard_action.action = Some(closure.clone());
-                }
+                },
+                MethodOverviewRef { name: "with_transition_ty", generics: [transition_ty], ..}  => {
+
+                    if guard_action.type_hint.is_some() {
+                        return Err(syn::Error::new(method.call.span(), "Duplicate 'with_transition_ty'!"));
+                    }
+
+                    guard_action.type_hint = Some(transition_ty.clone());
+
+                },
                 _ => { return Err(syn::Error::new(method.call.span(), "Unsupported method.")); }
             }
         }
@@ -194,9 +206,13 @@ impl FsmParser {
         {
             let mut i = 0;
 
-            fn generate_transition_ty(base: &FsmFnBase, i: &mut usize) -> syn::Type {
-                *i = *i + 1;
-                crate::utils::ty_append(&base.fsm_ty, &format!("Transition{}", i))
+            fn generate_transition_ty(base: &FsmFnBase, i: &mut usize, ty_hint: &Option<syn::Type>) -> syn::Type {
+                if let Some(type_hint) = ty_hint {
+                    type_hint.clone()
+                } else {
+                    *i = *i + 1;
+                    crate::utils::ty_append(&base.fsm_ty, &format!("Transition{}", i))
+                }
             }
 
             // start transition
@@ -204,7 +220,7 @@ impl FsmParser {
                 let fsm_initial_state = self.states.get(&initial_state).ok_or(syn::Error::new(initial_state.span(), "The initial state is not refered in the builder. Use the 'state' method on the builder."))?;
 
                 transitions.push(FsmTransition {
-                    transition_ty: generate_transition_ty(&self.base, &mut i),
+                    transition_ty: generate_transition_ty(&self.base, &mut i, &None),
                     ty: FsmTransitionType::StateTransition(FsmStateTransition {
                         action: EventGuardAction::default(),
                         event: FsmTransitionEvent::Start,
@@ -223,7 +239,7 @@ impl FsmParser {
                             let to = self.states.get(to).ok_or(syn::Error::new(to.span(), "State not found."))?;
 
                             transitions.push(FsmTransition {
-                                transition_ty: generate_transition_ty(&self.base, &mut i),
+                                transition_ty: generate_transition_ty(&self.base, &mut i, &action.type_hint),
                                 ty: FsmTransitionType::StateTransition(FsmStateTransition {
                                     action: action.clone(),
                                     state_from: FsmTransitionState::State(from.clone()),
@@ -236,7 +252,7 @@ impl FsmParser {
                             // todo: code duplication!
                             let state = self.states.get(state).ok_or(syn::Error::new(state.span(), "State not found."))?;
                             transitions.push(FsmTransition {
-                                transition_ty: generate_transition_ty(&self.base, &mut i),
+                                transition_ty: generate_transition_ty(&self.base, &mut i, &action.type_hint),
                                 ty: FsmTransitionType::InternalTransition(FsmStateAction {
                                     state: FsmTransitionState::State(state.clone()),
                                     action: action.clone(),
@@ -248,7 +264,7 @@ impl FsmParser {
                             // todo: code duplication!
                             let state = self.states.get(state).ok_or(syn::Error::new(state.span(), "State not found."))?;
                             transitions.push(FsmTransition {
-                                transition_ty: generate_transition_ty(&self.base, &mut i),
+                                transition_ty: generate_transition_ty(&self.base, &mut i, &action.type_hint),
                                 ty: FsmTransitionType::SelfTransition(FsmStateAction {
                                     state: FsmTransitionState::State(state.clone()),
                                     action: action.clone(),
@@ -275,7 +291,7 @@ impl FsmParser {
 
     fn state_builder_parser(&mut self, ty_state: &syn::Type, st: &[MethodOverviewRef], is_sub_fsm: bool) -> syn::Result<()> {
         if !is_sub_fsm { assert_no_generics(ty_state)?; }
-        let field_name = to_field_name(&ty_state)?;
+        let field_name = to_field_name(&ty_state);
         let state = self.states
             .entry(ty_state.clone())
             .or_insert(FsmState { 
@@ -283,11 +299,14 @@ impl FsmParser {
                 on_entry_closure: None,
                 on_exit_closure: None,
                 state_storage_field: field_name,
-                kind: FsmStateKind::Normal
+                kind: FsmStateKind::Normal,
+                timers: vec![]
             });
 
-        for (i, method) in st.iter().enumerate() {
+            
+        let mut timer = None;
 
+        for (i, method) in st.iter().enumerate() {
             match method {
                 MethodOverviewRef { name: "on_entry", .. } => {
                     let closure = get_closure(&method.call)?;
@@ -317,8 +336,46 @@ impl FsmParser {
 
                     break;
                 },
+                MethodOverviewRef { name: "on_entry_start_timer", generics: [], .. } => {
+
+                    let call_args: Vec<_> = method.call.args.iter().collect();
+                    match call_args.as_slice() {
+                        [syn::Expr::Closure(ref setup), syn::Expr::Closure(ref trigger)] => {
+
+                            if timer.is_some() { panic!("double timer bug!"); }
+                            
+                            timer = Some(FsmTimer {
+                                setup: setup.clone(),
+                                trigger: trigger.clone(),
+                                id: self.timer_id,
+                                type_hint: None
+                            });                           
+                            
+                            self.timer_id += 1;
+                            
+                        },
+                        _ => {
+                            return Err(syn::Error::new(method.call.span(), "Unexpected arguments to the timer setup method."));
+                        }
+                    }
+                },
+
+                MethodOverviewRef { name: "with_timer_ty", generics: [timer_ty], .. } => {
+
+                    if let Some(ref mut timer) = timer {
+                        timer.type_hint = Some(timer_ty.clone());
+                    } else {
+                        return Err(syn::Error::new(method.call.span(), "Missing the timer to apply the type to."));
+                    }
+
+                },
+
                 _ => { return Err(syn::Error::new(method.call.span(), format!("Unsupported method '{}'!", method.name))); }
             }
+        }
+
+        if let Some(timer) = timer {
+            state.timers.push(timer);
         }
 
         Ok(())

@@ -2,7 +2,7 @@ extern crate finny;
 
 use std::ops::{Add, AddAssign};
 
-use finny::{FsmCurrentState, FsmError, FsmEventQueueVec, FsmFactory, FsmResult, decl::{BuiltFsm, FsmBuilder}, finny_fsm, inspect_slog::InspectSlog};
+use finny::{FsmCurrentState, FsmError, FsmEventQueueVec, FsmFactory, FsmResult, FsmTimersNull, decl::{BuiltFsm, FsmBuilder}, finny_fsm, inspect::slog::InspectSlog};
 use slog::{Drain, o};
 
 #[derive(Debug)]
@@ -110,7 +110,7 @@ fn test_sub_generics() -> FsmResult<()> {
         field: 0usize,
         some_string: "Hello".into()
     };
-    let mut fsm = StateMachine::<usize, isize>::new_with(main_ctx, FsmEventQueueVec::new(), InspectSlog::new(Some(logger)))?;
+    let mut fsm = StateMachine::<usize, isize>::new_with(main_ctx, FsmEventQueueVec::new(), InspectSlog::new(Some(logger)), FsmTimersNull)?;
     
     fsm.start()?;
     assert_eq!(FsmCurrentState::State(StateMachineCurrentState::StateA), fsm.get_current_states()[0]);

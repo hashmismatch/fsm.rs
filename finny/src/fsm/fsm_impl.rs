@@ -1,4 +1,4 @@
-use crate::{DispatchContext, Inspect, lib::*};
+use crate::{DispatchContext, FsmTimers, Inspect, lib::*};
 use crate::{FsmBackend, FsmEvent, FsmEventQueue, FsmResult, FsmStates};
 
 use super::FsmStateFactory;
@@ -49,22 +49,44 @@ impl<F: FsmBackend> Deref for FsmBackendImpl<F> {
     }
 }
 
+impl<F: FsmBackend> DerefMut for FsmBackendImpl<F> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.context
+    }
+}
+
+
 /// The frontend of a state machine which also includes environmental services like queues
 /// and inspection. The usual way to use the FSM.
-pub struct FsmFrontend<F, Q, I> 
-    where F: FsmBackend, Q: FsmEventQueue<F>, I: Inspect
+pub struct FsmFrontend<F, Q, I, T> 
+    where F: FsmBackend, Q: FsmEventQueue<F>, I: Inspect, T: FsmTimers<F>
 {
     pub backend: FsmBackendImpl<F>,
     pub queue: Q,
-    pub inspect: I    
+    pub inspect: I,
+    pub timers: T
 }
 
-impl<F, Q, I> FsmFrontend<F, Q, I>
-    where F: FsmBackend, Q: FsmEventQueue<F>, I: Inspect
+impl<F, Q, I, T> FsmFrontend<F, Q, I, T>
+    where F: FsmBackend, Q: FsmEventQueue<F>, I: Inspect, T: FsmTimers<F>
 {
     /// Start the FSM, initiates the transition to the initial state.
     pub fn start(&mut self) -> FsmResult<()> {
         Self::dispatch_single_event(self, FsmEvent::Start)
+    }
+
+    /// Dispatch any pending timer events into the queue, then run all the
+    /// events from the queue until completition.
+    pub fn dispatch_timer_events(&mut self) -> FsmResult<()> {
+        loop {
+            if let Some(timer_id) = self.timers.get_triggered_timer() {
+                self.dispatch_single_event(FsmEvent::Timer(timer_id))?;
+            } else {
+                break;
+            }
+        }
+
+        self.dispatch_queue()
     }
 
     /// Dispatch this event and run it to completition.
@@ -75,32 +97,47 @@ impl<F, Q, I> FsmFrontend<F, Q, I>
         let ev = FsmEvent::Event(ev);
         Self::dispatch_single_event(self, ev)?;
 
-        while let Some(ev) = self.queue.dequeue() {
-            let ev: <F as FsmBackend>::Events = ev.into();
-            Self::dispatch(self, ev)?;
-        }
-
-        Ok(())
+        self.dispatch_queue()
     }
 
     /// Dispatch only this event, do not run it to completition.
-    pub fn dispatch_single_event(&mut self, event: FsmEvent<<F as FsmBackend>::Events>) -> FsmResult<()> {
+    pub fn dispatch_single_event(&mut self, event: FsmEvent<<F as FsmBackend>::Events, <F as FsmBackend>::Timers>) -> FsmResult<()> {
         let dispatch_ctx = DispatchContext {
             backend: &mut self.backend,
             inspect: &mut self.inspect,
-            queue: &mut self.queue
+            queue: &mut self.queue,
+            timers: &mut self.timers
         };
 
         F::dispatch_event(dispatch_ctx, event)
     }
+
+    /// Dispatch the entire event queue and run it to completition.
+    pub fn dispatch_queue(&mut self) -> FsmResult<()> {
+        while let Some(ev) = self.queue.dequeue() {
+            let ev: <F as FsmBackend>::Events = ev.into();
+            // todo: log?
+            Self::dispatch(self, ev);
+        }
+
+        Ok(())
+    }
 }
 
-impl<F, Q, I> Deref for FsmFrontend<F, Q, I>
-    where F: FsmBackend, Q: FsmEventQueue<F>, I: Inspect
+impl<F, Q, I, T> Deref for FsmFrontend<F, Q, I, T>
+    where F: FsmBackend, Q: FsmEventQueue<F>, I: Inspect, T: FsmTimers<F>
 {
     type Target = FsmBackendImpl<F>;
 
     fn deref(&self) -> &Self::Target {
         &self.backend
+    }
+}
+
+impl<F, Q, I, T> DerefMut for FsmFrontend<F, Q, I, T>
+    where F: FsmBackend, Q: FsmEventQueue<F>, I: Inspect, T: FsmTimers<F>
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.backend
     }
 }

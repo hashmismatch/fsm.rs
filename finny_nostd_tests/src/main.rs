@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use finny::{finny_fsm, FsmFactory, FsmEventQueueArray, InspectNull};
+use finny::{finny_fsm, FsmFactory, FsmEventQueueArray, InspectNull, FsmTimersNull};
 use finny::decl::{FsmBuilder, BuiltFsm};
 use heapless::consts::*;
 
@@ -17,7 +17,8 @@ pub extern "C" fn main(_argc: isize, _argv: *const *const u8) -> isize {
         let ctx = StateMachineContext::default();
         let queue = FsmEventQueueArray::<_, [_; 16]>::new(); 
         let inspect = InspectNull::new();
-        let mut fsm = StateMachine::new_with(ctx, queue, inspect).unwrap();
+        let timers = FsmTimersNull;
+        let mut fsm = StateMachine::new_with(ctx, queue, inspect, timers).unwrap();
         fsm.start().unwrap();
     }
 

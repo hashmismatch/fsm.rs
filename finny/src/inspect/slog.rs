@@ -1,10 +1,10 @@
-use slog::{info, o};
-use crate::{FsmBackend, FsmEvent, Inspect};
-use super::lib::*;
+use slog::{info, o, error};
+use crate::{FsmBackend, FsmBackendImpl, FsmEvent, Inspect};
+use crate::lib::*;
 use AsRef;
 
 pub struct InspectSlog {
-    logger: slog::Logger
+    pub logger: slog::Logger
 }
 
 impl InspectSlog {
@@ -15,10 +15,17 @@ impl InspectSlog {
     }
 }
 
-impl Inspect for InspectSlog {
-    fn new_event<F: FsmBackend>(&self, event: &FsmEvent<<F as FsmBackend>::Events>) -> Self {
-        let event = event.as_ref().to_string();
-        let kv = o!("event" => event);
+impl Inspect for InspectSlog
+{
+    fn new_event<F: FsmBackend>(&self, event: &FsmEvent<<F as FsmBackend>::Events, <F as FsmBackend>::Timers>, fsm: &FsmBackendImpl<F>) -> Self {
+        let event_display = match event {
+            FsmEvent::Timer(t) => format!("Fsm::Timer({:?})", t),
+            _ => event.as_ref().to_string()
+        };
+
+        let current_state = format!("{:?}", fsm.get_current_states());
+
+        let kv = o!("event" => event_display, "start_state" => current_state);
         info!(self.logger, "Dispatching"; &kv);
         InspectSlog {
             logger: self.logger.new(kv)
@@ -43,6 +50,13 @@ impl Inspect for InspectSlog {
         }
     }
 
+    fn for_timer<F>(&self, timer_id: <F as FsmBackend>::Timers) -> Self where F: FsmBackend {
+        let kv = o!("timer_id" => format!("{:?}", timer_id));
+        InspectSlog {
+            logger: self.logger.new(kv)
+        }
+    }    
+
     fn on_guard<T>(&self, guard_result: bool) {
         let guard = type_name::<T>();
         info!(self.logger, "Guard {guard} evaluated to {guard_result}", guard = guard, guard_result = guard_result);
@@ -63,7 +77,17 @@ impl Inspect for InspectSlog {
         info!(self.logger, "Executing {action}", action = action);
     }
 
-    fn event_done(self) {
-        info!(self.logger, "Dispatch done");
+    fn event_done<F: FsmBackend>(self, fsm: &FsmBackendImpl<F>) {
+        let states = format!("{:?}", fsm.get_current_states());
+        info!(self.logger, "Dispatch done"; "stop_state" => states);
+    }
+
+    fn on_error<E>(&self, msg: &str, error: &E) where E: Debug {
+        let kv = o!("error" => format!("{:?}", error));
+        error!(self.logger, "{}", msg; kv);
+    }
+
+    fn info(&self, msg: &str) {
+        info!(self.logger, "{}", msg);
     }
 }

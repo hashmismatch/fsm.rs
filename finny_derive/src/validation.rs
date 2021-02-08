@@ -66,7 +66,7 @@ pub fn create_regions(decl: FsmDeclarations, options: FsmCodegenOptions) -> syn:
     // build the regions
     let mut regions = vec![];
     for (region_id, initial_state) in decl.initial_states.iter().enumerate() {
-        let transitions = {
+        let (transitions, states) = {
             let region_states: HashSet<_> = graph.raw_nodes().iter()
                 .filter(|n| n.weight.region == Some(region_id))
                 .map(|n| n.weight.state.clone())
@@ -88,13 +88,14 @@ pub fn create_regions(decl: FsmDeclarations, options: FsmCodegenOptions) -> syn:
                 }
             }
 
-            transitions
+            (transitions, region_states)
         };
 
         regions.push(FsmRegion {
             initial_state: initial_state.clone(),
             region_id,
-            transitions
+            transitions,
+            states: states.into_iter().map(|ty| decl.states.get(&ty).unwrap()).cloned().collect()
         });
     }
     

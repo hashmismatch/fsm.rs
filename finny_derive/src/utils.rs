@@ -51,12 +51,12 @@ pub fn strip_generics(mut ty: syn::Type) -> syn::Type {
     ty
 }
 
-pub fn to_field_name(ty: &syn::Type) -> syn::Result<syn::Ident> {
+pub fn to_field_name(ty: &syn::Type) -> syn::Ident {
     let ty = strip_generics(ty.clone());
 
     let s = tokens_to_string(&ty);
     let snake = to_snake_case(&s);
-    Ok(syn::Ident::new(&snake, ty.span()))
+    syn::Ident::new(&snake, ty.span())
 }
 
 pub fn tokens_to_string<T: quote::ToTokens>(t: &T) -> String {

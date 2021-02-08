@@ -68,8 +68,8 @@ pub mod decl;
 mod fsm;
 
 
-#[cfg(feature="inspect_slog")]
-pub mod inspect_slog;
+pub mod inspect;
+pub mod timers;
 
 pub use fsm::*;
 
@@ -102,6 +102,7 @@ mod lib {
    pub use self::core::fmt;
    pub use self::core::any::type_name;
    pub use self::core::slice::SliceIndex;
+   pub use self::core::time::Duration;
 
    #[cfg(feature="std")]
    pub use std::collections::VecDeque;

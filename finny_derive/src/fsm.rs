@@ -1,8 +1,6 @@
-use syn::{WhereClause, spanned::Spanned};
+use crate::utils::{strip_generics, ty_append};
 
-use crate::utils::{get_ty_ident, strip_generics, ty_append};
-
-
+#[derive(Clone)]
 pub struct FsmTypes {
     fsm: syn::Type,
     fsm_no_generics: syn::Type,
@@ -29,4 +27,16 @@ impl FsmTypes {
     pub fn get_fsm_events_ty(&self) -> syn::Type {
         ty_append(&self.fsm_no_generics, "Events")
     }
+
+    pub fn get_fsm_timers_ty(&self) -> syn::Type {
+        ty_append(&self.fsm_no_generics, "Timers")
+    }
+
+    pub fn get_fsm_timers_iter_ty(&self) -> syn::Type {
+        ty_append(&self.fsm_no_generics, "TimersIter")
+    }
+
+    pub fn get_fsm_timers_storage_ty(&self) -> syn::Type {
+        ty_append(&self.fsm_no_generics, "TimersStorage")
+    }    
 }

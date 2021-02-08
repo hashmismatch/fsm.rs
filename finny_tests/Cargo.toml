@@ -9,3 +9,4 @@ edition = "2018"
 finny = { path = "../finny/" }
 slog = "2.7.0"
 slog-term = "2.6.0"
+slog-async = "2.6.0"
